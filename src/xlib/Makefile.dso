@@ -1,0 +1,54 @@
+TARGET = bin/liblwi.so
+SRCDIRS = src/xlib src
+INCDIRS = include src/misc
+OBJDIR = obj
+LIBS = pthread rt X11 Xrender Xxf86vm Xfixes GL GLU
+DEFINES = _BSD_SOURCE _GNU_SOURCE LWI_BUILD_CAIRO
+
+PKGS = cairo
+PKG_CFLAGS = $(foreach pkg,$(PKGS),$(shell pkg-config --cflags $(pkg)))
+PKG_LIBS = $(foreach pkg,$(PKGS),$(shell pkg-config --libs $(pkg)))
+
+CFLAGS = -std=c99 -Wall -W $(PKG_CFLAGS)
+LINKFLAGS = -shared -fvisibility=hidden -fvisibility-inlines-hidden
+
+ifeq ($(strip $(DEBUG)),)
+  CFLAGS += -Os -fomit-frame-pointer -fvisibility=hidden
+  DEFINES += NDEBUG
+else
+  CFLAGS += -ggdb
+endif
+
+CFLAGS += $(DEFINES:%=-D%) $(INCDIRS:%=-I%)
+LINKAGE = $(LIBDIRS:%=-L%) $(LIBS:%=-l%)
+CEE_SRC = $(foreach dir,$(SRCDIRS),$(wildcard $(dir)/*.c))
+CEE_DEP = $(CEE_SRC:%=$(OBJDIR)/%.d)
+CEE_OBJ = $(CEE_SRC:%=$(OBJDIR)/%.o)
+
+.PHONY : all clean
+
+all : $(TARGET)
+	@exit 0
+
+$(TARGET) : $(CEE_OBJ)
+	@echo " DSO      $@"
+	@gcc -pipe -fPIC -o $@ $(CEE_OBJ) $(CFLAGS) $(LINKFLAGS) $(PKG_LIBS) $(LINKAGE)
+ifeq ($(strip $(DEBUG)),)
+	@strip -s -R .comment $@
+endif
+
+clean :
+	@rm -f $(TARGET) $(CEE_OBJ) $(CEE_DEP)
+
+$(OBJDIR)/%.c.o : %.c
+	@echo " GCC      $<"
+	@gcc -c -pipe -fPIC $(CFLAGS) -o $@ $<
+
+$(OBJDIR)/%.c.d : %.c
+	@mkdir -p $(dir $@)
+	@gcc -MM -MP -MT "$(OBJDIR)/$<.o" $(CFLAGS) $< > $@ \
+	  || (rm -f $@; exit 1)
+
+ifneq ($(MAKECMDGOALS),clean)
+-include $(CEE_DEP)
+endif
